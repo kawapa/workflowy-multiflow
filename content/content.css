@@ -1,0 +1,50 @@
+html, body {
+  width: 100%;
+  height: 100%; }
+
+body[data-mode="workflowy"] #workflowy {
+  display: block; }
+
+body[data-mode="workflowy"] #multiflow {
+  display: none; }
+
+body[data-mode="multiflow"] {
+  padding: 0;
+  transition: none; }
+  body[data-mode="multiflow"] #workflowy {
+    display: none; }
+  body[data-mode="multiflow"] #multiflow {
+    display: block; }
+
+body[data-layout="fit-left"] iframe:first-child {
+  max-width: 450px; }
+
+body[data-layout="fit-content"] {
+  overflow-x: scroll; }
+
+body[data-layout="fit-content"] iframe {
+  max-width: 700px;
+  border-right: 1px solid #DDD; }
+
+body[data-frames="1"] iframe {
+  max-width: unset !important; }
+
+#workflowy {
+  height: 100%; }
+
+#multiflow {
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  height: 100%; }
+  #multiflow main {
+    display: flex;
+    height: 100%; }
+  #multiflow iframe {
+    flex: 1;
+    height: 100%;
+    border: none; }
+  #multiflow iframe:not(:last-child) {
+    border-right: 1px solid #DDD; }
+  #multiflow .hidden {
+    display: none; }
