@@ -1,8 +1,8 @@
 # README
 
-This repository stores a modified Chrome/Chromium extension - [WorkFlowy MultiFlow](https://chrome.google.com/webstore/detail/workflowy-multiflow/khjdmjcmpolknpccmaaipmidphjokhdf?hl=en-GB). The only difference between the one in Chrome Web Store and the one here is the favicon at the top bar of the browser. The author of the WorkFlowy MultiFlow extension ([Dave Stewart](https://davestewart.co.uk/products/workflowy-multiflow)) decided to override the Workflowy logo (if multi-column view is active) and introduce his own, which I find quite irritiating.
+This repository stores a modified Chrome/Chromium extension - [WorkFlowy MultiFlow](https://chrome.google.com/webstore/detail/workflowy-multiflow/khjdmjcmpolknpccmaaipmidphjokhdf?hl=en-GB). The only difference between the one in Chrome Web Store and the one here is the favicon at the top bar of the browser. The author of the WorkFlowy MultiFlow extension ([Dave Stewart](https://davestewart.co.uk/products/workflowy-multiflow)) decided to override the Workflowy logo (if multi-column view is active) and introduce his own, which I find quite irritiating. So, here's what this extension mod does:
 
-![Here's what this extension mod does](image.png)
+![](image.png)
 
 ## Installation
 
