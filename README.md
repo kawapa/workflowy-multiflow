@@ -14,7 +14,7 @@ This repository stores a modified Chrome/Chromium extension - [WorkFlowy MultiFl
 6. Click "Load unpacked" and select the directory with the cloned repo.
 7. Restart the browser.
   
-**Note!** It might be required also to remove cached images the browser:
+**Note!** If you have been using the original WorkFlowy MultiFlow previously, it might be required also to remove cached images the browser:
 
 1. Click Customize and Control Chrome/Chromium (three dots on the top-right).
 2. Click "More Tools" -> "Clear browsing data".
