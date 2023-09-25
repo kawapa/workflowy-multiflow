@@ -25,7 +25,14 @@ function log (message, ...values) {
   console.log('MultiFlow: ' + message, ...values);
 }
 
-// import { runCommand } from '../utils/chrome.js'
+function checkInstall () {
+  const key = 'installed';
+  const firstRun = !storage.get(key);
+  if (firstRun) {
+    storage.set(key, 1);
+  }
+  return firstRun
+}
 
 log('background initialized!');
 
@@ -60,18 +67,38 @@ chrome.runtime.onInstalled.addListener(function () {
 });
 
 chrome.runtime.onMessage.addListener(function (request = {}, _sender, sendResponse) {
+  // variables
   log('command received', request);
-  if (request.command === 'page_loaded') {
+  const { command, value } = request;
+
+  // page loaded
+  if (command === 'page_loaded') {
     const sessions = Sessions.get();
     log('available sessions:', sessions);
-    const session = sessions.find(session => session.id === request.value);
+    const session = sessions.find(session => session.id === value);
     if (session) {
       log('loading session:', session);
       sendResponse(session);
     }
   }
+
+  // check install
+  else if (command === 'check_install') {
+    sendResponse(checkInstall());
+  }
+
+  // anything else
   else {
     sendResponse();
   }
+
+  // mark as async
   return true
+});
+
+// show instructions page on install
+chrome.runtime.onInstalled.addListener(function ({ reason }) {
+  if (reason === 'install') {
+    window.open('https://davestewart.co.uk/products/workflowy-multiflow/?utm_source=MultiFlow');
+  }
 });

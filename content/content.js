@@ -57,28 +57,37 @@ function runWhen (condition, action, interval = 500) {
 
 const WF_WIDTH = 700;
 const rxUrl = /^(https?:\/\/)?(\w+\.)?workflowy.com/;
-const rxPath = /^\/?#/;
+const rxHash = /^\/?#/;
 
-function isWfUrl (path) {
-  return rxPath.test(path) || rxUrl.test(path)
+function isWfUrl (input) {
+  return rxHash.test(input) || rxUrl.test(input)
 }
 
-function makeWfUrl (path) {
-  if (!isWfUrl(path)) {
-    return path
+/**
+ * Ensure a valid WorkFlowy URL
+ *
+ * @param   {string}  input   Either a hash #xxxxxxxx or full WorkFlowy URL
+ * @param   {string}  origin  Optional WorkFlowy https:// origin
+ * @return  {string}          A sanitised URL
+ */
+function makeWfUrl (input, origin = window.location.origin) {
+  // non wf urls; return as-is
+  if (!isWfUrl(input)) {
+    return input
   }
 
-  // current location
-  const { protocol, hostname } = window.location;
-  const prefix = protocol + '//' + hostname;
-
   // sanitize path
-  path = path
+  let path = input
     .replace(rxUrl, '')
-    .replace(rxPath, '/#');
+    .replace(rxHash, '/#');
+
+  // ensure path ends with hash
+  if (path.length < 2) {
+    path = '/#';
+  }
 
   // return url
-  return prefix + path
+  return origin + path
 }
 
 function checkReady (doc = document) {
@@ -96,42 +105,42 @@ function getPage (frame) {
   return getDoc(frame).querySelector('.pageContainer')
 }
 
-function addListeners (window, handler) {
-  // elements
-  const document = getDoc(window);
-  const page = getPage(window);
+function getLink (el, selector = 'a') {
+  return el.matches(selector)
+    ? el
+    : el.closest(selector)
+}
 
-  // duplicate frame handler
-  document.querySelector('.breadcrumbs').addEventListener('click', (event) => {
-    if (event.target.matches('a:last-of-type') && isModifier(event)) {
-      handler('page', window.location.href, true);
-    }
-  });
-
-  // bullet handler
-  page.addEventListener('click', (event) => {
-    const selector = 'a.bullet';
-    const target = event.target;
-    const link = target.matches(selector)
-      ? target
-      : target.closest(selector);
-    if (link && isModifier(event)) {
-      handler('bullet', makeWfUrl(link.getAttribute('href')), true);
-      stop(event);
-    }
-  }, { capture: true });
-
-  // link handler
-  page.addEventListener('click', (event) => {
-    const el = event.target;
-    if (el.tagName === 'A') {
-      const href = el.getAttribute('href');
-      if (isWfUrl(href)) {
-        handler('link', makeWfUrl(href), isModifier(event));
+function addListeners (window, handler, type = 'page') {
+  // helper
+  function handleClicks (target, selector = 'a', type = 'page') {
+    target.addEventListener('click', (event) => {
+      const link = getLink(event.target, selector);
+      if (link && isModifier(event)) {
+        handler(makeWfUrl(link.href), true, type);
         stop(event);
       }
-    }
-  }, { capture: true });
+    }, { capture: true });
+  }
+
+  // elements
+  const doc = getDoc(window);
+  const page = getPage(window);
+  const breadcrumbs = doc.querySelector('.breadcrumbs');
+  const leftBar = doc.querySelector('.leftBar');
+
+  // areas
+  handleClicks(breadcrumbs);
+  handleClicks(leftBar, 'a[href^="/#/"]');
+  handleClicks(page, 'a.bullet', 'bullet');
+  handleClicks(page, 'a.contentLink', 'link');
+}
+
+function addScript (text) {
+  const script = document.createElement('script');
+  script.className = 'multiflow-script';
+  script.textContent = text;
+  document.head.appendChild(script);
 }
 
 function setSetting (key, value) {
@@ -155,9 +164,34 @@ function callBackground (command, value) {
         console.log('received response:', ...args);
       }
       console.groupEnd();
-      resolve(args);
+      resolve(...args);
     });
   })
+}
+
+function slugify (text) {
+  return String(text || '')
+    .toLowerCase()
+    .replace(/\W+/g, '-')
+    .replace(/^-+|-+$/g, '')
+}
+
+function getTitle (frame) {
+  if (Array.isArray(frame)) {
+    return frame
+      .map(getTitle)
+      .filter(title => title)
+      .join(' + ')
+  }
+
+  const title = frame.title;
+  return title === 'WorkFlowy - Organize your brain.'
+    ? 'Home'
+    : title || ''
+}
+
+function getId (frame) {
+  return slugify(getTitle(frame))
 }
 
 /**
@@ -169,6 +203,10 @@ function callBackground (command, value) {
  * @property {HTMLElement}  element
  */
 class Frame {
+  get window () {
+    return this.element.contentWindow
+  }
+
   /**
    *
    * @param {Page}    parent
@@ -181,15 +219,11 @@ class Frame {
     this.loaded = false;
   }
 
-  get window () {
-    return this.element.contentWindow
-  }
-
   // -------------------------------------------------------------------------------------------------------------------
   // setup
   // -------------------------------------------------------------------------------------------------------------------
 
-  create (container, src) {
+  init (container, src) {
     // blank frames
     const isHidden = !src;
     src = src || 'about:blank';
@@ -198,11 +232,6 @@ class Frame {
     this.element = document.createElement('iframe');
     this.element.setAttribute('src', src);
     container.appendChild(this.element);
-
-    // don't show hidden frames
-    if (isHidden) {
-      this.hide();
-    }
 
     // set up load
     this.loaded = false;
@@ -213,6 +242,15 @@ class Frame {
         return runWhen(checkReady(document), () => this.onReady())
       }
     });
+
+    // set up focus
+    this.window.addEventListener('focus', () => this.onFocus());
+    this.onFocus();
+
+    // don't show hidden frames
+    if (isHidden) {
+      this.hide();
+    }
 
     // return
     return this.element
@@ -297,36 +335,15 @@ class Frame {
   // handlers
   // -------------------------------------------------------------------------------------------------------------------
 
-  onClick (type, href, hasModifier) {
+  onFocus () {
+    this.parent.onFrameFocused(this.element);
+  }
+
+  onClick (href, hasModifier, type) {
     type === 'link'
       ? this.parent.loadFrame(this, href, hasModifier)
       : this.parent.loadNextFrame(this, href);
   }
-}
-
-function slugify (text) {
-  return String(text || '')
-    .toLowerCase()
-    .replace(/\W+/g, '-')
-    .replace(/^-+|-+$/g, '')
-}
-
-function getTitle (frame) {
-  if (Array.isArray(frame)) {
-    return frame
-      .map(getTitle)
-      .filter(title => title)
-      .join(' + ')
-  }
-
-  const title = frame.title;
-  return title === 'WorkFlowy - Organize your brain.'
-    ? 'Home'
-    : title || ''
-}
-
-function getId (frame) {
-  return slugify(getTitle(frame))
 }
 
 /**
@@ -352,12 +369,6 @@ class Page {
   // -------------------------------------------------------------------------------------------------------------------
 
   init () {
-    // workflowy
-    const workflowy = document.createElement('div');
-    workflowy.setAttribute('id', 'workflowy');
-    Array.from(document.body.children).forEach(child => workflowy.appendChild(child));
-    document.body.appendChild(workflowy);
-
     // multiflow
     const multiflow = document.createElement('div');
     multiflow.setAttribute('id', 'multiflow');
@@ -401,7 +412,7 @@ class Page {
     // if switching to workflowy, show the open frame
     if (!isMultiFlow) {
       const openFrame = this.getVisibleFrames().find(frame => frame !== closedFrame);
-      document.location.href = openFrame.window.location.href;
+      window.location.href = makeWfUrl(openFrame.window.location.href);
     }
 
     // values
@@ -437,7 +448,7 @@ class Page {
     this.setLoading(true);
     const frame = new Frame(this, this.frames.length);
     this.frames.push(frame);
-    frame.create(this.container, src);
+    frame.init(this.container, src);
     this.updateLayout();
     return frame
   }
@@ -557,6 +568,12 @@ class Page {
     }
   }
 
+  onFrameFocused (element) {
+    const frames = document.querySelectorAll('#multiflow iframe');
+    const index = [...frames].indexOf(element);
+    setSetting('focused', index);
+  }
+
   onFrameNavigated () {
     this.updateSession();
   }
@@ -573,8 +590,11 @@ class App {
    * Application class
    */
   constructor () {
-    log('running!');
-    this.init();
+    // eslint-disable-next-line no-void
+    void runWhen(
+      () => document.getElementById('loadingScreen').style.display === 'none',
+      () => this.init(),
+    );
   }
 
   // -------------------------------------------------------------------------------------------------------------------
@@ -598,7 +618,7 @@ class App {
     // session
     log('checking for session...');
     const id = location.hash.substring(2);
-    chrome.runtime.sendMessage({ command: 'page_loaded', value: id }, (session) => {
+    callBackground('page_loaded', id).then(session => {
       if (chrome.runtime.lastError) {
         console.warn('MultiFlow:', chrome.runtime.lastError.message);
       }
@@ -613,21 +633,36 @@ class App {
   }
 
   onReady () {
+    // ready
     log('page ready!');
     addListeners(window, this.onItemClick.bind(this));
+
+    // install message
+    log('checking first run...');
+    callBackground('check_install').then(state => {
+      // first run
+      if (state) {
+        addScript('WF.showMessage("MultiFlow installed! Remember to pin the extension icon to work with Layouts and Sessions.")');
+      }
+
+      // disable desktop app links
+      // FIXME strangely, MultiFlow doesn't even run if desktop links are on
+      const command = 'WF.showMessage(\'MultiFlow: To ensure correct functionality, the setting "Open links in desktop app" has been disabled.\')';
+      addScript(`
+        const links = window?.feature('open_links_in_desktop')
+        if (links?.on) {
+          links.toggle()
+          ${!state && command}
+        }
+      `);
+    });
   }
 
   // handle clicks on main workflowy page
-  onItemClick (_frame, url, hasModifier) {
+  onItemClick (url, hasModifier, _type) {
     if (hasModifier) {
-      // determine current item
-      const projectId = document.querySelector('[projectid]').getAttribute('projectid');
-      const itemId = projectId !== 'None'
-        ? projectId.split('-').pop()
-        : '';
-
-      // load urls
-      const urls = [makeWfUrl('#' + itemId), url];
+      const left = makeWfUrl(window.location.href);
+      const urls = [left, url];
       this.setSession({
         id: 'multiflow',
         urls,
@@ -699,6 +734,9 @@ class App {
 
 // global reference
 let app;
+
+// debug
+log('running!');
 
 // only run in top frame
 if (window === window.top) {
